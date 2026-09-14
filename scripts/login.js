@@ -1,152 +1,113 @@
-/* Login page: pick a profile, enter its PIN, or create a new profile.
-   On success this sets the current profile and sends the browser to overview.html. */
+/* Login page: email + password auth via Supabase (supabase.auth). No phone
+   number, no PIN — just Sign Up (name, email, password) and Log In
+   (email, password). On success this redirects to overview.html. */
 
-// Already logged in (e.g. someone typed this URL directly)? Skip straight to the app.
-if(currentProfileId){
-  window.location.href = 'overview.html';
-}
-
-loadProfiles();
-let loginMode = profiles.length === 0 ? 'create' : 'select';
-let pinTargetProfile = null;
+let loginMode = 'login'; // 'login' | 'signup'
 let loginError = '';
+let loginNotice = '';
+let submitting = false;
 
 function loginToggleBar(){
   return `<div class="login-toggle">
-    <button class="toggle-btn ${loginMode === 'select' ? 'active' : ''}" id="toLoginTab">Log In</button>
-    <button class="toggle-btn ${loginMode === 'create' ? 'active' : ''}" id="toCreateTab">New Profile</button>
+    <button class="toggle-btn ${loginMode === 'login' ? 'active' : ''}" id="toLoginTab">Log In</button>
+    <button class="toggle-btn ${loginMode === 'signup' ? 'active' : ''}" id="toSignupTab">Sign Up</button>
   </div>`;
 }
 
 function renderLogin(){
   const root = document.getElementById('root');
 
-  if(loginMode === 'select'){
+  if(loginMode === 'login'){
     root.innerHTML = `<div class="login-shell"><div class="login-wrap">
       <div class="brand-lg"><span class="dot" style="width:8px;height:8px;border-radius:50%;background:var(--glow);box-shadow:0 0 8px var(--glow);display:inline-block;"></span>FD - FINANCE DASHBOARD</div>
       ${loginToggleBar()}
-      <h2>Who's this?</h2>
-      ${profiles.length === 0 ? `
-        <div class="lede">No profiles saved yet in this browser. Create one to get started.</div>
-        <button class="btn-primary" id="showCreateBtn" style="margin-top:6px;">+ Create your first profile</button>
-      ` : `
-        <div class="lede">Pick a profile to see your own accounts and transactions.</div>
-        <div class="profile-list">
-          ${profiles.map((p,i) => `
-            <div class="profile-item">
-              <button class="profile-select" data-id="${p.id}">
-                <span class="avatar" style="background:${colorFor(i)}">${initials(p.name)}</span>
-                <span style="min-width:0;"><div class="profile-name">${escapeHtml(p.name)}</div>${p.phone ? `<div style="color:var(--text-faint); font-size:11px; margin-top:2px;">${escapeHtml(p.phone)}</div>` : ''}</span>
-              </button>
-              <button class="profile-remove" data-remove="${p.id}">×</button>
-            </div>
-          `).join('')}
-        </div>
-        <button class="btn-ghost" id="showCreateBtn">+ Add a profile</button>
-      `}
-      <div class="login-note">PINs are a light way to keep each person's entries separate on a shared device — plain 4-digit codes, not encrypted security. Profiles and data are saved in this browser's local storage, so they'll be here next time you open these files in the same browser on the same device — but they won't follow you to a different browser or computer.</div>
-    </div></div>`;
-    document.querySelectorAll('.profile-select').forEach(btn => { btn.onclick = () => selectProfile(btn.dataset.id); });
-    document.querySelectorAll('.profile-remove').forEach(btn => { btn.onclick = () => { deleteProfile(btn.dataset.remove); renderLogin(); }; });
-    const showCreate = document.getElementById('showCreateBtn');
-    if(showCreate) showCreate.onclick = () => { loginMode = 'create'; loginError = ''; renderLogin(); };
-
-  }else if(loginMode === 'pin' && pinTargetProfile){
-    root.innerHTML = `<div class="login-shell"><div class="login-wrap">
-      <button class="back-link" id="backLink">← All profiles</button>
-      <h2>Enter PIN for ${escapeHtml(pinTargetProfile.name)}</h2>
-      <div class="lede">4-digit PIN</div>
-      <div class="pin-boxes">${[0,1,2,3].map(i => `<input type="password" inputmode="numeric" maxlength="1" class="pinDigit" data-i="${i}">`).join('')}</div>
-      <div class="login-error">${loginError}</div>
-      <button class="btn-primary" id="unlockBtn">Unlock</button>
-    </div></div>`;
-    const back = document.getElementById('backLink');
-    if(back) back.onclick = backToSelect;
-    pinAutoAdvance('.pinDigit', (pin) => verifyPin(pin));
-    document.getElementById('unlockBtn').onclick = () => {
-      const pin = Array.from(document.querySelectorAll('.pinDigit')).map(b => b.value).join('');
-      if(pin.length === 4) verifyPin(pin); else { loginError = 'Enter all 4 digits.'; renderLogin(); }
-    };
-
-  }else{
-    // create
-    root.innerHTML = `<div class="login-shell"><div class="login-wrap">
-      <div class="brand-lg"><span class="dot" style="width:8px;height:8px;border-radius:50%;background:var(--glow);box-shadow:0 0 8px var(--glow);display:inline-block;"></span>FD - FINANCE DASHBOARD</div>
-      ${loginToggleBar()}
-      <h2>${profiles.length === 0 ? 'Welcome to FD - Finance Dashboard' : 'New profile'}</h2>
-      <div class="lede">${profiles.length === 0 ? "Create a profile to get started. Add more people any time." : "Give this person a name and a 4-digit PIN."}</div>
+      <h2>Welcome back</h2>
+      <div class="lede">Log in with your email and password.</div>
       <div class="create-form">
-        <div class="field"><label>Name</label><input type="text" id="cName" placeholder="e.g. Alex"></div>
-        <div class="field"><label>Phone number <span style="color:var(--text-faint)">(optional)</span></label><input type="tel" id="cPhone" placeholder="e.g. (555) 123-4567"></div>
-        <div class="field"><label>4-digit PIN</label><div class="pin-boxes">${[0,1,2,3].map(i => `<input type="password" inputmode="numeric" maxlength="1" class="createPinDigit" data-i="${i}">`).join('')}</div></div>
-        <div class="login-error">${loginError}</div>
-        <button class="btn-primary" id="createBtn">Create profile</button>
+        <div class="field"><label>Email</label><input type="email" id="lEmail" placeholder="you@example.com" autocomplete="email"></div>
+        <div class="field"><label>Password</label><input type="password" id="lPassword" placeholder="••••••••" autocomplete="current-password"></div>
+        ${loginError ? `<div class="login-error">${escapeHtml(loginError)}</div>` : ''}
+        ${loginNotice ? `<div class="login-note">${escapeHtml(loginNotice)}</div>` : ''}
+        <button class="btn-primary" id="loginBtn" ${submitting ? 'disabled' : ''}>${submitting ? 'Logging in…' : 'Log in'}</button>
       </div>
-      <div class="login-note">This PIN just keeps profiles separate on this device — don't reuse a password you rely on elsewhere.</div>
+      <div class="login-note">Your data is stored in your own account and synced through Supabase — it'll be here no matter which browser or device you log in from.</div>
     </div></div>`;
-    const toLogin = document.getElementById('toLoginTab');
-    const toCreate = document.getElementById('toCreateTab');
-    if(toLogin) toLogin.onclick = () => { loginMode = 'select'; loginError = ''; renderLogin(); };
-    if(toCreate) toCreate.onclick = () => { loginMode = 'create'; loginError = ''; renderLogin(); };
-    document.getElementById('createBtn').onclick = () => {
-      const name = document.getElementById('cName').value.trim();
-      const phone = document.getElementById('cPhone').value.trim();
-      const digits = Array.from(document.querySelectorAll('.createPinDigit')).map(b => b.value);
-      if(!name){ loginError = 'Enter a name.'; renderLogin(); return; }
-      if(digits.some(d => d === '')){ loginError = 'Enter all 4 PIN digits.'; renderLogin(); return; }
-      createProfile(name, digits.join(''), phone); // redirects to overview.html on success
-    };
-  }
+    document.getElementById('loginBtn').onclick = doLogin;
+    document.getElementById('lPassword').addEventListener('keydown', e => { if(e.key === 'Enter') doLogin(); });
 
-  // The toggle bar's own tab buttons need wiring whenever it's in the DOM
-  // (select and create modes both render it).
-  const toLogin = document.getElementById('toLoginTab');
-  const toCreate = document.getElementById('toCreateTab');
-  if(toLogin) toLogin.onclick = () => { loginMode = 'select'; loginError = ''; renderLogin(); };
-  if(toCreate) toCreate.onclick = () => { loginMode = 'create'; loginError = ''; renderLogin(); };
-}
-
-function selectProfile(id){
-  pinTargetProfile = profiles.find(p => p.id === id) || null;
-  if(!pinTargetProfile) return;
-  loginError = '';
-  loginMode = 'pin';
-  renderLogin();
-  focusFirstPinBox();
-}
-function backToSelect(){
-  loginMode = profiles.length === 0 ? 'create' : 'select';
-  loginError = '';
-  pinTargetProfile = null;
-  renderLogin();
-}
-function verifyPin(pin){
-  if(pinTargetProfile && pin === pinTargetProfile.pin){
-    setCurrentProfile(pinTargetProfile.id);
-    loadProfileData();
-    window.location.href = 'overview.html';
   }else{
-    loginError = 'Incorrect PIN. Try again.';
-    renderLogin();
-    focusFirstPinBox();
+    // signup
+    root.innerHTML = `<div class="login-shell"><div class="login-wrap">
+      <div class="brand-lg"><span class="dot" style="width:8px;height:8px;border-radius:50%;background:var(--glow);box-shadow:0 0 8px var(--glow);display:inline-block;"></span>FD - FINANCE DASHBOARD</div>
+      ${loginToggleBar()}
+      <h2>Create your account</h2>
+      <div class="lede">Sign up with your name, email, and a password.</div>
+      <div class="create-form">
+        <div class="field"><label>Name</label><input type="text" id="sName" placeholder="e.g. Alex" autocomplete="name"></div>
+        <div class="field"><label>Email</label><input type="email" id="sEmail" placeholder="you@example.com" autocomplete="email"></div>
+        <div class="field"><label>Password</label><input type="password" id="sPassword" placeholder="At least 6 characters" autocomplete="new-password"></div>
+        ${loginError ? `<div class="login-error">${escapeHtml(loginError)}</div>` : ''}
+        ${loginNotice ? `<div class="login-note">${escapeHtml(loginNotice)}</div>` : ''}
+        <button class="btn-primary" id="signupBtn" ${submitting ? 'disabled' : ''}>${submitting ? 'Creating account…' : 'Create account'}</button>
+      </div>
+      <div class="login-note">Passwords are handled entirely by Supabase Auth — this app never sees or stores them itself.</div>
+    </div></div>`;
+    document.getElementById('signupBtn').onclick = doSignup;
+    document.getElementById('sPassword').addEventListener('keydown', e => { if(e.key === 'Enter') doSignup(); });
   }
+
+  const toLogin = document.getElementById('toLoginTab');
+  const toSignup = document.getElementById('toSignupTab');
+  if(toLogin) toLogin.onclick = () => { loginMode = 'login'; loginError = ''; loginNotice = ''; renderLogin(); };
+  if(toSignup) toSignup.onclick = () => { loginMode = 'signup'; loginError = ''; loginNotice = ''; renderLogin(); };
 }
 
-function focusFirstPinBox(){
-  setTimeout(() => { const el = document.querySelector('.pin-boxes input'); if(el) el.focus(); }, 0);
-}
-function pinAutoAdvance(selector, onComplete){
-  const boxes = Array.from(document.querySelectorAll(selector));
-  boxes.forEach((box, i) => {
-    box.oninput = () => {
-      box.value = box.value.replace(/[^0-9]/g, '').slice(0,1);
-      if(box.value && i < boxes.length - 1) boxes[i+1].focus();
-      if(boxes.every(b => b.value.length === 1)) onComplete(boxes.map(b => b.value).join(''));
-    };
-    box.onkeydown = (e) => { if(e.key === 'Backspace' && !box.value && i > 0) boxes[i-1].focus(); };
-  });
-  if(boxes[0]) boxes[0].focus();
+async function doLogin(){
+  const email = document.getElementById('lEmail').value.trim();
+  const password = document.getElementById('lPassword').value;
+  if(!email || !password){ loginError = 'Enter your email and password.'; renderLogin(); return; }
+  loginError = ''; loginNotice = ''; submitting = true; renderLogin();
+  const result = await signIn(email, password);
+  submitting = false;
+  if(result.error){
+    loginError = result.error.message || 'Could not log in. Check your email and password.';
+    renderLogin();
+    return;
+  }
+  window.location.href = 'overview.html';
 }
 
-onStateChange = renderLogin;
-renderLogin();
+async function doSignup(){
+  const name = document.getElementById('sName').value.trim();
+  const email = document.getElementById('sEmail').value.trim();
+  const password = document.getElementById('sPassword').value;
+  if(!name){ loginError = 'Enter your name.'; renderLogin(); return; }
+  if(!email){ loginError = 'Enter your email.'; renderLogin(); return; }
+  if(!password || password.length < 6){ loginError = 'Password must be at least 6 characters.'; renderLogin(); return; }
+  loginError = ''; loginNotice = ''; submitting = true; renderLogin();
+  const result = await signUp(name, email, password);
+  submitting = false;
+  if(result.error){
+    loginError = result.error.message || 'Could not create your account.';
+    renderLogin();
+    return;
+  }
+  if(result.needsEmailConfirmation){
+    loginMode = 'login';
+    loginNotice = 'Account created — check your email to confirm it, then log in.';
+    renderLogin();
+    return;
+  }
+  window.location.href = 'overview.html';
+}
+
+// If a session already exists (e.g. this tab was left signed in), skip
+// straight to the app instead of showing the login form.
+(async () => {
+  const user = await getCurrentUser();
+  if(user){
+    window.location.href = 'overview.html';
+    return;
+  }
+  renderLogin();
+})();

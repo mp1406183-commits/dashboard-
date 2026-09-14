@@ -1,24 +1,18 @@
 /* ======================================================================
    FD - Finance Dashboard — app-data.js
-   Shared data layer: constants, state, persistence, CRUD.
-   Loaded by every page BEFORE app-shell.js / app-analytics.js / the page's
-   own script.
+   Shared data layer: constants, state, persistence (Supabase), CRUD.
+   Loaded by every page AFTER supabase-client.js and BEFORE app-shell.js /
+   app-analytics.js / the page's own script.
 
-   NOTE ON STORAGE: the original single-file version used Claude's
-   `window.storage` artifact API. Split into standalone files like this,
-   there is no such API, so this version saves everything to the
-   browser's own localStorage instead. That means data now lives in
-   *this browser, on this device* — open the files from a different
-   browser/computer and you'll see empty profiles, same as before.
+   PERSISTENCE: accounts and sessions are handled by Supabase Auth
+   (email + password). Each signed-in user's whole finance dataset
+   (transactions, budgets, goals, accounts, SIPs, debts) is stored as one
+   JSON document in the `finance_data` table — see supabase-schema.sql.
    ====================================================================== */
 
 // ----------------------------------------------------------------------
 // Constants
 // ----------------------------------------------------------------------
-const PROFILES_KEY = 'finance-profiles';
-const CURRENT_PROFILE_KEY = 'finance-current-profile-id';
-const dataKey = () => `finance-data-${currentProfileId}`;
-
 const EXPENSE_CATS = ['Housing','Rent/Mortgage','Utilities','Groceries','Dining Out','Transport','Fuel','Insurance','Health & Medical','Fitness','Education','Childcare','Pets','Entertainment','Subscriptions','Shopping','Clothing','Personal Care','Travel','Gifts & Donations','Taxes','Debt Payment','Bills & Fees','Home Maintenance','Electronics','Other'];
 const INCOME_CATS = ['Salary','Bonus','Freelance','Business Income','Investment','Dividends','Interest','Rental Income','Gift','Refund','Government Benefit','Pension','Other'];
 const INVESTMENT_CATS = ['Stocks','Mutual Funds','ETFs','Crypto','Real Estate','Bonds','Retirement (401k/IRA)','Gold & Commodities','Fixed Deposit','PPF','Startup/Private Equity','Other'];
@@ -35,7 +29,6 @@ const ICONS = {
   insights: '<line x1="4" y1="20" x2="4" y2="12"/><line x1="10" y1="20" x2="10" y2="4"/><line x1="16" y1="20" x2="16" y2="14"/><line x1="22" y1="20" x2="22" y2="8"/>'
 };
 const TAB_LABELS = { overview: 'Overview', income: 'Income', transactions: 'Transactions', savings: 'Savings', accounts: 'Accounts', debt: 'Debt', insights: 'Insights' };
-// filename each tab lives in — kept separate from the label in case a page is ever renamed
 const TAB_PAGES = { overview: 'overview.html', income: 'income.html', transactions: 'transactions.html', savings: 'savings.html', accounts: 'accounts.html', debt: 'debt.html', insights: 'insights.html' };
 
 // ----------------------------------------------------------------------
@@ -46,12 +39,13 @@ function emptyState(){
 }
 let state = emptyState();
 let filters = { search: '', type: 'all', category: 'all', account: 'all', direction: 'all' };
-let profiles = [];
-let currentProfileId = localStorage.getItem(CURRENT_PROFILE_KEY) || null;
+
+// The signed-in Supabase user, set by initPage()/login.js once a session
+// is confirmed: { id, email, name }
+let currentUser = null;
 
 // Each page sets this to its own "re-render my content" function right after
-// it builds its DOM, so that CRUD calls below can refresh the view in place
-// instead of every button needing its own re-render logic.
+// it builds its DOM, so that CRUD calls below can refresh the view in place.
 let onStateChange = null;
 function notifyChange(){ if(typeof onStateChange === 'function') onStateChange(); }
 
@@ -114,32 +108,58 @@ function categoryOptionsFor(type){
 }
 
 // ----------------------------------------------------------------------
-// Profile persistence (localStorage)
+// Auth (Supabase)
 // ----------------------------------------------------------------------
-function loadProfiles(){
-  try{
-    const raw = localStorage.getItem(PROFILES_KEY);
-    profiles = raw ? JSON.parse(raw) : [];
-  }catch(e){
-    profiles = [];
-  }
-}
-function saveProfiles(){
-  try{ localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles)); }
-  catch(e){ console.error('Failed to save profiles', e); }
+// Resolves the current session, if any, and sets `currentUser`. Returns
+// the Supabase user object, or null if nobody is signed in.
+async function getCurrentUser(){
+  const { data: { session }, error } = await supabase.auth.getSession();
+  if(error || !session){ currentUser = null; return null; }
+  const u = session.user;
+  currentUser = { id: u.id, email: u.email, name: (u.user_metadata && u.user_metadata.name) || u.email };
+  return currentUser;
 }
 
-function setCurrentProfile(id){
-  currentProfileId = id;
-  if(id) localStorage.setItem(CURRENT_PROFILE_KEY, id);
-  else localStorage.removeItem(CURRENT_PROFILE_KEY);
+async function signUp(name, email, password){
+  const { data, error } = await supabase.auth.signUp({
+    email, password,
+    options: { data: { name } }
+  });
+  if(error) return { error };
+  // Projects with "Confirm email" ON return a user but no session yet.
+  if(!data.session) return { needsEmailConfirmation: true };
+  await getCurrentUser();
+  await loadProfileData();
+  return { ok: true };
+}
+async function signIn(email, password){
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if(error) return { error };
+  currentUser = { id: data.user.id, email: data.user.email, name: (data.user.user_metadata && data.user.user_metadata.name) || data.user.email };
+  await loadProfileData();
+  return { ok: true };
+}
+async function signOut(){
+  await supabase.auth.signOut();
+  currentUser = null;
+  state = emptyState();
+  window.location.href = 'login.html';
 }
 
-function loadProfileData(){
+// ----------------------------------------------------------------------
+// Data persistence (Supabase `finance_data` table — one JSON row per user)
+// ----------------------------------------------------------------------
+async function loadProfileData(){
+  if(!currentUser){ state = emptyState(); return; }
   try{
-    const raw = localStorage.getItem(dataKey());
-    if(raw){
-      const parsed = JSON.parse(raw);
+    const { data, error } = await supabase
+      .from('finance_data')
+      .select('data')
+      .eq('user_id', currentUser.id)
+      .maybeSingle();
+    if(error) throw error;
+    if(data && data.data){
+      const parsed = data.data;
       state = {
         transactions: parsed.transactions || [],
         budgets: parsed.budgets || [],
@@ -152,6 +172,7 @@ function loadProfileData(){
       state = emptyState();
     }
   }catch(e){
+    console.error('Failed to load finance data', e);
     state = emptyState();
   }
 
@@ -174,52 +195,34 @@ function loadProfileData(){
   });
 
   filters = { search: '', type: 'all', category: 'all', account: 'all', direction: 'all' };
-  if(needsSave) save();
+  if(needsSave) await save();
 }
 
-function save(){
-  try{ localStorage.setItem(dataKey(), JSON.stringify(state)); }
-  catch(e){ console.error('Failed to save profile data', e); }
-}
-
-// ---- Profile actions ----
-function createProfile(name, pin, phone){
-  loadProfiles();
-  const p = { id: uid(), name, pin, phone: phone || '' };
-  profiles.push(p);
-  saveProfiles();
-  setCurrentProfile(p.id);
-  loadProfileData();
-  window.location.href = 'overview.html';
-}
-function deleteProfile(id){
-  loadProfiles();
-  const p = profiles.find(x => x.id === id);
-  if(!p) return;
-  if(!confirm(`Remove "${p.name}" and permanently delete all of their data? This cannot be undone.`)) return;
-  profiles = profiles.filter(x => x.id !== id);
-  saveProfiles();
-  try{ localStorage.removeItem(`finance-data-${id}`); }catch(e){ /* nothing stored yet, fine */ }
-  if(currentProfileId === id){
-    logout(); // deleting your own active profile logs you out
-    return;
+// Fire-and-forget upsert: the UI updates instantly from in-memory `state`;
+// this writes it to Supabase in the background. Errors are logged, not
+// thrown, so a flaky connection never blocks the page.
+async function save(){
+  if(!currentUser) return;
+  try{
+    const { error } = await supabase
+      .from('finance_data')
+      .upsert({ user_id: currentUser.id, data: state }, { onConflict: 'user_id' });
+    if(error) throw error;
+  }catch(e){
+    console.error('Failed to save finance data', e);
   }
-  notifyChange();
 }
-function logout(){
-  setCurrentProfile(null);
-  window.location.href = 'login.html';
-}
+
 function clearAll(){
-  if(!confirm("Clear all of this profile's transactions, budgets, goals, accounts, and SIPs? This cannot be undone.")) return;
+  if(!confirm("Clear all of your transactions, budgets, goals, accounts, and SIPs? This cannot be undone.")) return;
   state = emptyState();
   save();
-  loadProfileData();
-  notifyChange();
+  loadProfileData().then(notifyChange);
 }
 
 // ----------------------------------------------------------------------
 // Data mutations (transactions, budgets, goals, accounts, SIPs, debts)
+// Each mutates in-memory `state`, saves to Supabase, then refreshes the UI.
 // ----------------------------------------------------------------------
 function addTransaction(t){
   state.transactions.unshift(t);
