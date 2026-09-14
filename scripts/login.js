@@ -102,12 +102,26 @@ async function doSignup(){
 }
 
 // If a session already exists (e.g. this tab was left signed in), skip
-// straight to the app instead of showing the login form.
+// straight to the app instead of showing the login form. If anything goes
+// wrong (network down, blocked script, bad credentials) show a message
+// instead of leaving the page stuck on "Loading…" forever.
 (async () => {
-  const user = await getCurrentUser();
-  if(user){
-    window.location.href = 'overview.html';
-    return;
+  try{
+    const user = await getCurrentUser();
+    if(user){
+      window.location.href = 'overview.html';
+      return;
+    }
+    renderLogin();
+  }catch(e){
+    console.error('Login page failed to start', e);
+    const root = document.getElementById('root');
+    if(root){
+      root.innerHTML = `<div style="max-width:520px; margin:60px auto; padding:24px; font-family:sans-serif; line-height:1.5;">
+        <h2 style="margin-top:0;">Something went wrong loading the login page</h2>
+        <p>${escapeHtml(e.message || 'Unknown error.')}</p>
+        <p><b>Try:</b> reloading the page, checking your internet connection, or turning off any ad/tracker blocker for this site.</p>
+      </div>`;
+    }
   }
-  renderLogin();
 })();

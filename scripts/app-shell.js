@@ -63,20 +63,38 @@ function buildFooterActions(){
   if(signOutBtn) signOutBtn.onclick = signOut;
 }
 
-// Call once per page, after the DOM is parsed. Async: confirms the Supabase
-// session, loads the user's data, then builds the shared chrome.
-async function initPage(config){
-  const user = await getCurrentUser();
-  if(!user){
-    window.location.href = 'login.html';
-    return;
+function showFatalError(message){
+  const root = document.getElementById('root');
+  if(root){
+    root.innerHTML = `<div style="max-width:520px; margin:60px auto; padding:24px; font-family:sans-serif; line-height:1.5;">
+      <h2 style="margin-top:0;">Something went wrong loading this page</h2>
+      <p>${escapeHtml(message)}</p>
+      <p><b>Try:</b> reloading the page, checking your internet connection, or turning off any ad/tracker blocker for this site.</p>
+    </div>`;
   }
-  await loadProfileData();
+}
 
-  buildNav(config.tab);
-  buildProfileBadge();
-  buildHeader(config.tab, config);
-  buildFooterActions();
+// Call once per page, after the DOM is parsed. Async: confirms the Supabase
+// session, loads the user's data, then builds the shared chrome. Any failure
+// (network down, blocked script, bad credentials) shows a message instead of
+// leaving the page stuck on "Loading…" forever.
+async function initPage(config){
+  try{
+    const user = await getCurrentUser();
+    if(!user){
+      window.location.href = 'login.html';
+      return;
+    }
+    await loadProfileData();
 
-  if(typeof config.onReady === 'function') config.onReady();
+    buildNav(config.tab);
+    buildProfileBadge();
+    buildHeader(config.tab, config);
+    buildFooterActions();
+
+    if(typeof config.onReady === 'function') config.onReady();
+  }catch(e){
+    console.error('initPage failed', e);
+    showFatalError(e.message || 'Unknown error.');
+  }
 }
