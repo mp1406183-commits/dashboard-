@@ -30,4 +30,4 @@ if(typeof window.supabase === 'undefined'){
   throw new Error('Supabase JS failed to load — check ad blockers / network and reload.');
 }
 
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
