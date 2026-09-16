@@ -56,13 +56,13 @@ function uid(){ return Date.now().toString(36) + Math.random().toString(36).slic
 
 function fmt(n){
   const sign = n < 0 ? '-' : '';
-  return sign + '$' + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return sign + '₹' + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function fmtCompact(n){
   const sign = n < 0 ? '-' : '';
   const abs = Math.abs(n);
-  if(abs >= 1000) return sign + '$' + (abs/1000).toFixed(1) + 'k';
-  return sign + '$' + abs.toFixed(0);
+  if(abs >= 1000) return sign + '₹' + (abs/1000).toFixed(1) + 'k';
+  return sign + '₹' + abs.toFixed(0);
 }
 function svgIcon(name){
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
