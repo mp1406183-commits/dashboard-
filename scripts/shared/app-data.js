@@ -355,3 +355,153 @@ function debtPayoffInfo(d){
   return { months, totalInterest, etaLabel: eta.toLocaleDateString(undefined, { month:'short', year:'numeric' }) };
 }
 function totalDebt(){ return state.debts.reduce((s,d) => s + d.balance, 0); }
+
+// ----------------------------------------------------------------------
+// Excel import / export
+// Uses the SheetJS "xlsx" library, loaded via CDN as the global `XLSX` on
+// pages that offer this feature (see transactions.html). Export writes
+// every part of your data to a workbook with one sheet per data type;
+// import reads that same shape back in, so round-tripping (export, edit
+// in Excel, re-import) works, and matching accounts/goals/debts/SIPs by
+// name means you can add new rows in Excel and import just those too.
+// ----------------------------------------------------------------------
+function buildWorkbook(){
+  const wb = XLSX.utils.book_new();
+
+  const txnRows = state.transactions.map(t => ({
+    Date: t.date,
+    Type: t.type,
+    Category: t.category,
+    Note: t.note || '',
+    Amount: t.amount,
+    Account: accountName(t.accountId)
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(txnRows), 'Transactions');
+
+  const acctRows = state.accounts.map(a => ({ Name: a.name, Type: a.type, 'Starting Balance': a.startingBalance || 0 }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(acctRows), 'Accounts');
+
+  const goalRows = state.goals.map(g => ({ Name: g.name, Target: g.target, Saved: g.saved }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(goalRows), 'Goals');
+
+  const debtRows = state.debts.map(d => ({ Name: d.name, Balance: d.balance, 'APR %': d.apr, 'Monthly Payment': d.minPayment }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(debtRows), 'Debts');
+
+  const sipRows = state.sips.map(s => ({ Name: s.name, 'Fund Type': s.fundType, 'Monthly Amount': s.monthlyAmount, Account: accountName(s.accountId) }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sipRows), 'SIPs');
+
+  const budgetRows = state.budgets.map(b => ({ Category: b.category, 'Monthly Limit': b.limit }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(budgetRows), 'Budgets');
+
+  return wb;
+}
+
+function exportToExcel(){
+  const wb = buildWorkbook();
+  const filename = `fd-finance-dashboard-${new Date().toISOString().slice(0,10)}.xlsx`;
+  XLSX.writeFile(wb, filename);
+}
+
+function findOrCreateAccountByName(name, added){
+  const trimmed = String(name || '').trim();
+  if(!trimmed) return state.accounts[0].id;
+  let acct = state.accounts.find(a => a.name.toLowerCase() === trimmed.toLowerCase());
+  if(!acct){
+    acct = { id: uid(), name: trimmed, type: 'Other', startingBalance: 0 };
+    state.accounts.push(acct);
+    if(added) added.accounts++;
+  }
+  return acct.id;
+}
+
+const VALID_TXN_TYPES = ['income', 'expense', 'saving', 'investment'];
+
+// Reads a workbook (in the same shape buildWorkbook() writes) and merges it
+// into the current account: existing accounts/goals/debts/SIPs are matched
+// by name and left alone (never overwritten), new ones are created;
+// budgets are upserted by category; every transaction row becomes a new
+// transaction. Returns counts so the caller can show a summary.
+function importFromWorkbook(wb){
+  const sheet = (name) => wb.Sheets[name] ? XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '' }) : [];
+  const added = { accounts: 0, goals: 0, debts: 0, sips: 0, budgets: 0, transactions: 0 };
+  let skipped = 0;
+
+  // Accounts first, so transactions/SIPs below can reference them by name.
+  sheet('Accounts').forEach(row => {
+    const name = String(row.Name || '').trim();
+    if(!name) return;
+    if(!state.accounts.some(a => a.name.toLowerCase() === name.toLowerCase())){
+      state.accounts.push({ id: uid(), name, type: String(row.Type || 'Other'), startingBalance: Number(row['Starting Balance']) || 0 });
+      added.accounts++;
+    }
+  });
+
+  sheet('Goals').forEach(row => {
+    const name = String(row.Name || '').trim();
+    if(!name) return;
+    if(!state.goals.some(g => g.name.toLowerCase() === name.toLowerCase())){
+      state.goals.push({ id: uid(), name, target: Number(row.Target) || 0, saved: Number(row.Saved) || 0 });
+      added.goals++;
+    }
+  });
+
+  sheet('Debts').forEach(row => {
+    const name = String(row.Name || '').trim();
+    if(!name) return;
+    if(!state.debts.some(d => d.name.toLowerCase() === name.toLowerCase())){
+      state.debts.push({ id: uid(), name, balance: Number(row.Balance) || 0, apr: Number(row['APR %']) || 0, minPayment: Number(row['Monthly Payment']) || 0 });
+      added.debts++;
+    }
+  });
+
+  sheet('SIPs').forEach(row => {
+    const name = String(row.Name || '').trim();
+    if(!name) return;
+    if(!state.sips.some(s => s.name.toLowerCase() === name.toLowerCase())){
+      const accountId = findOrCreateAccountByName(row.Account, added);
+      state.sips.push({ id: uid(), name, fundType: String(row['Fund Type'] || 'Mutual Funds'), monthlyAmount: Number(row['Monthly Amount']) || 0, accountId, startDate: new Date().toISOString().slice(0,10) });
+      added.sips++;
+    }
+  });
+
+  sheet('Budgets').forEach(row => {
+    const category = String(row.Category || '').trim();
+    const limit = Number(row['Monthly Limit']);
+    if(!category || !limit) return;
+    state.budgets = state.budgets.filter(b => b.category !== category);
+    state.budgets.push({ category, limit });
+    added.budgets++;
+  });
+
+  sheet('Transactions').forEach(row => {
+    const type = String(row.Type || '').trim().toLowerCase();
+    const amount = Number(row.Amount);
+    let date = row.Date;
+    if(typeof date === 'number'){
+      // Excel serial date number (SheetJS gives one if cellDates wasn't set)
+      const d = XLSX.SSF.parse_date_code(date);
+      date = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
+    }else if(date instanceof Date){
+      date = date.toISOString().slice(0, 10);
+    }else{
+      date = String(date || '').trim();
+    }
+    if(!VALID_TXN_TYPES.includes(type) || !amount || !date){ skipped++; return; }
+    const accountId = findOrCreateAccountByName(row.Account, added);
+    const category = String(row.Category || 'Other').trim();
+    let goalId = null;
+    if(type === 'saving'){
+      const goal = state.goals.find(g => g.name.toLowerCase() === category.toLowerCase());
+      if(goal){
+        goalId = goal.id;
+        goal.saved += amount;
+      }
+    }
+    state.transactions.unshift({ id: uid(), type, date, note: String(row.Note || ''), category, amount, accountId, goalId });
+    added.transactions++;
+  });
+
+  save();
+  notifyChange();
+  return { added, skipped };
+}
