@@ -62,12 +62,14 @@ function renderTransactions(){
         </div>
         <div class="form-grid">
           <div class="field"><label>Date</label><input type="date" id="fDate" value="${new Date().toISOString().slice(0,10)}"></div>
+          <div class="field"><label>Time</label><input type="time" id="fTime" value="${new Date().toTimeString().slice(0,5)}"></div>
           <div class="field"><label>Description</label><input type="text" id="fNote" placeholder="e.g. Groceries"></div>
           <div class="field"><label>Category</label><select id="fCategory">${categoryOptionsFor(entryType).map(c => `<option value="${c}">${c}</option>`).join('')}</select></div>
           <div class="field"><label>Account</label><select id="fAccount">${accountOptions()}</select></div>
           <div class="field"><label>Amount</label><input type="number" id="fAmount" placeholder="0.00" min="0" step="0.01"></div>
           <button class="btn-primary" id="submitEntryBtn">Add</button>
         </div>
+        <div class="empty-note" style="margin-top:8px;">Defaults to right now — change the date and/or time above if this entry happened earlier.</div>
         <input type="text" id="fCategoryOther" placeholder="Type your own category" style="display:none; margin-top:10px; width:100%; background:var(--surface); border:1px solid var(--border); color:var(--text); padding:8px 10px; border-radius:5px; font-size:12.5px;">
         ${entryType === 'saving' && state.goals.length === 0 ? `<div class="empty-note" style="margin-top:10px">No savings goals yet — this will be tracked as general savings.</div>` : ''}
       </div>
@@ -79,7 +81,7 @@ function renderTransactions(){
           <div class="txn-line">
             <div class="txn-main">
               <div class="txn-desc">${escapeHtml(t.note) || '—'}</div>
-              <div class="txn-meta">${parseLocalDate(t.date).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})} · ${escapeHtml(t.category)} · ${escapeHtml(accountName(t.accountId))}</div>
+              <div class="txn-meta">${fmtDateTimeShort(t.date)} · ${escapeHtml(t.category)} · ${escapeHtml(accountName(t.accountId))}</div>
             </div>
             <div class="txn-right">
               <span class="amt ${t.type}">${t.type === 'income' ? '+' : '-'}${fmt(t.amount).replace('-','')}</span>
@@ -107,7 +109,8 @@ function renderTransactions(){
   fCategorySelect.onchange = toggleFOther;
   toggleFOther();
   document.getElementById('submitEntryBtn').onclick = () => {
-    const date = document.getElementById('fDate').value;
+    const dateVal = document.getElementById('fDate').value;
+    const timeVal = document.getElementById('fTime').value || '00:00';
     const note = document.getElementById('fNote').value.trim();
     let category = document.getElementById('fCategory').value;
     if(category === 'Other'){
@@ -116,7 +119,8 @@ function renderTransactions(){
     }
     const accountId = document.getElementById('fAccount').value;
     const amount = parseFloat(document.getElementById('fAmount').value);
-    if(!date || !amount || amount <= 0){ alert('Please enter a valid date and amount.'); return; }
+    if(!dateVal || !amount || amount <= 0){ alert('Please enter a valid date and amount.'); return; }
+    const date = `${dateVal}T${timeVal}:00`;
     const goal = entryType === 'saving' ? state.goals.find(g => g.name === category) : null;
     addTransaction({ id: uid(), type: entryType, date, note, category, amount, accountId, goalId: goal ? goal.id : null });
     addOpen = false;
