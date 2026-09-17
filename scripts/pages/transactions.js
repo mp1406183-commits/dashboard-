@@ -46,6 +46,13 @@ function renderTransactions(){
         </div>
       </div>
 
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin: -6px 0 16px;">
+        <button class="btn-ghost" id="exportExcelBtn">⬇ Export to Excel</button>
+        <button class="btn-ghost" id="importExcelBtn">⬆ Import from Excel</button>
+        <input type="file" id="importExcelInput" accept=".xlsx,.xls" style="display:none">
+        <span class="panel-sub" style="margin:0;">Export gives you the exact column layout to fill in and re-import.</span>
+      </div>
+
       <div class="form-panel ${addOpen ? 'open' : ''}" id="addEntryPanel">
         <div class="toggle-pills">
           <button class="pill ${entryType==='income'?'active-income':''}" id="pillIncome">Income</button>
@@ -115,6 +122,35 @@ function renderTransactions(){
     addOpen = false;
   };
   document.querySelectorAll('.del-btn[data-id]').forEach(btn => { btn.onclick = () => deleteTransaction(btn.dataset.id); });
+
+  document.getElementById('exportExcelBtn').onclick = () => exportToExcel();
+  document.getElementById('importExcelBtn').onclick = () => document.getElementById('importExcelInput').click();
+  document.getElementById('importExcelInput').onchange = (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try{
+        const data = new Uint8Array(evt.target.result);
+        const wb = XLSX.read(data, { type: 'array', cellDates: true });
+        const { added, skipped } = importFromWorkbook(wb);
+        const parts = [];
+        if(added.transactions) parts.push(`${added.transactions} transaction${added.transactions === 1 ? '' : 's'}`);
+        if(added.accounts) parts.push(`${added.accounts} account${added.accounts === 1 ? '' : 's'}`);
+        if(added.goals) parts.push(`${added.goals} goal${added.goals === 1 ? '' : 's'}`);
+        if(added.debts) parts.push(`${added.debts} debt${added.debts === 1 ? '' : 's'}`);
+        if(added.sips) parts.push(`${added.sips} SIP${added.sips === 1 ? '' : 's'}`);
+        if(added.budgets) parts.push(`${added.budgets} budget${added.budgets === 1 ? '' : 's'}`);
+        const summary = parts.length ? `Imported ${parts.join(', ')}.` : 'Nothing new to import.';
+        alert(summary + (skipped ? ` Skipped ${skipped} row(s) with missing/invalid data.` : ''));
+      }catch(err){
+        console.error('Excel import failed', err);
+        alert("Couldn't read that file. Use Export to Excel first to get the exact expected format, then edit and re-import that file.");
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = '';
+  };
 }
 
 function openAddEntry(){
