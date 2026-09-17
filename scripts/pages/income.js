@@ -48,7 +48,7 @@ function renderIncome(){
         <tbody>
           ${allIncome.map(t => `
             <tr>
-              <td class="date">${parseLocalDate(t.date).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</td>
+              <td class="date">${fmtDateTimeShort(t.date)}</td>
               <td>${escapeHtml(t.note) || '—'}</td>
               <td class="cat">${escapeHtml(t.category)}</td>
               <td class="acct">${escapeHtml(accountName(t.accountId))}</td>
@@ -77,7 +77,7 @@ function renderIncome(){
     const accountId = document.getElementById('qiAccount').value;
     const amount = parseFloat(document.getElementById('qiAmount').value);
     if(!amount || amount <= 0){ alert('Enter a valid amount.'); return; }
-    addTransaction({ id: uid(), type: 'income', date: new Date().toISOString().slice(0,10), note, category, amount, accountId, goalId: null });
+    addTransaction({ id: uid(), type: 'income', date: new Date().toISOString(), note, category, amount, accountId, goalId: null });
   };
   document.querySelectorAll('.del-btn[data-id]').forEach(btn => { btn.onclick = () => deleteTransaction(btn.dataset.id); });
 }
