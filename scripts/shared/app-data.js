@@ -68,7 +68,23 @@ function svgIcon(name){
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
 }
 function monthLabel(){ return new Date().toLocaleDateString(undefined, { month:'long', year:'numeric' }); }
-function parseLocalDate(dateStr){ return new Date(dateStr + 'T00:00:00'); }
+// Accepts either a plain "YYYY-MM-DD" date or a full ISO timestamp
+// ("YYYY-MM-DDTHH:MM:SS") — the latter is what new entries store now so
+// they carry a time, not just a date.
+function parseLocalDate(dateStr){
+  if(!dateStr) return new Date(NaN);
+  if(String(dateStr).includes('T')) return new Date(dateStr);
+  return new Date(dateStr + 'T00:00:00');
+}
+// Full "Month D, YYYY, h:mm AM/PM" display used everywhere a transaction's
+// date is shown.
+function fmtDateTime(dateStr){
+  return parseLocalDate(dateStr).toLocaleString(undefined, { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+// Shorter "Mon D, YYYY, h:mm AM/PM" variant for tighter table rows.
+function fmtDateTimeShort(dateStr){
+  return parseLocalDate(dateStr).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
 function isThisMonth(dateStr){
   const d = parseLocalDate(dateStr); const now = new Date();
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
@@ -266,7 +282,7 @@ function contributeToGoal(goalId, amount, accountId){
   const goal = state.goals.find(g => g.id === goalId);
   if(!goal) return;
   addTransaction({
-    id: uid(), type: 'saving', date: new Date().toISOString().slice(0,10),
+    id: uid(), type: 'saving', date: new Date().toISOString(),
     note: 'Contribution to ' + goal.name, category: goal.name, amount, goalId, accountId
   });
 }
@@ -304,7 +320,7 @@ function logSIPContribution(sipId){
   const sip = state.sips.find(s => s.id === sipId);
   if(!sip) return;
   addTransaction({
-    id: uid(), type: 'investment', date: new Date().toISOString().slice(0,10),
+    id: uid(), type: 'investment', date: new Date().toISOString(),
     note: 'SIP: ' + sip.name, category: sip.fundType, amount: sip.monthlyAmount,
     accountId: sip.accountId, goalId: null, sipId: sip.id
   });
@@ -330,7 +346,7 @@ function makeDebtPayment(debtId, amount, accountId){
   if(!debt) return;
   debt.balance = Math.max(0, debt.balance - amount);
   addTransaction({
-    id: uid(), type: 'expense', date: new Date().toISOString().slice(0,10),
+    id: uid(), type: 'expense', date: new Date().toISOString(),
     note: 'Debt payment: ' + debt.name, category: 'Debt Payment', amount,
     accountId, goalId: null, debtId: debt.id
   });
@@ -482,7 +498,7 @@ function importFromWorkbook(wb){
       const d = XLSX.SSF.parse_date_code(date);
       date = `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
     }else if(date instanceof Date){
-      date = date.toISOString().slice(0, 10);
+      date = date.toISOString();
     }else{
       date = String(date || '').trim();
     }
