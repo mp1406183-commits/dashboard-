@@ -9,37 +9,28 @@
 <body>
 
 <div class="brand-stripe"></div>
-<div class="shell">
-  <div class="sidebar" id="sidebar">
-    <div class="brand-row">
-      <div class="brand"><span class="dot"></span>FD - FINANCE DASHBOARD</div>
-      <div style="display:flex; align-items:center;">
-        <div class="sync-status"><span class="pulse"></span>Synced</div>
-        <div class="profile-badge" id="profileBadge"></div>
-      </div>
-    </div>
-    <nav id="mainNav"></nav>
-    <div class="sidebar-footer">
-      <button id="resetBtn">Clear my data</button>
-    </div>
-  </div>
+<header class="topbar">
+  <div class="brand"><span class="dot"></span>FD — Finance Dashboard</div>
+  <nav class="tabs" id="mainNav"></nav>
+  <div class="profile-badge" id="profileBadge"></div>
+</header>
 
-  <main class="content" id="mainContent">
-    <div class="content-header" id="contentHeader">
-      <div>
-        <h1 id="pageTitle">Transactions</h1>
-        <div class="sub" id="dateSub"></div>
-      </div>
-      <button class="btn-primary" id="headerActionBtn">+ Add entry</button>
+<main class="content" id="mainContent">
+  <div class="content-header" id="contentHeader">
+    <div>
+      <h1 id="pageTitle">Transactions</h1>
+      <div class="sub" id="dateSub"></div>
     </div>
-    <div id="root">
-      <div class="loading">Loading…</div>
-    </div>
-    <div class="page-footer"><span class="fmark">FD — Finance Dashboard</span> · your data is synced to your account</div>
-  </main>
-</div>
+    <button class="btn-primary" id="headerActionBtn">+ Add entry</button>
+  </div>
+  <div id="root">
+    <div class="loading">Loading…</div>
+  </div>
+  <div class="page-footer"><span class="fmark">FD — Finance Dashboard</span> · your data is synced to your account · <button class="linklike" id="resetBtn">Clear my data</button></div>
+</main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="../scripts/shared/supabase-client.js"></script>
 <script src="../scripts/shared/app-data.js"></script>
 <script src="../scripts/shared/app-analytics.js"></script>
