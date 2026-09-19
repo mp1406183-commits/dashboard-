@@ -25,6 +25,23 @@ function buildNav(activeTab){
   }).join('');
 }
 
+function buildBookSwitcher(){
+  const el = document.getElementById('bookSwitcher');
+  if(!el) return;
+  el.innerHTML = Object.keys(BOOK_LABELS).map(book =>
+    `<button data-book="${book}" class="${book === currentBook ? 'active' : ''}">${BOOK_LABELS[book]}</button>`
+  ).join('');
+  el.querySelectorAll('button').forEach(btn => {
+    btn.onclick = () => {
+      if(btn.dataset.book === currentBook) return;
+      setCurrentBook(btn.dataset.book);
+      // Simplest reliable way to fully reload this page's data for the
+      // newly selected book, across every page in the app.
+      window.location.reload();
+    };
+  });
+}
+
 function buildProfileBadge(){
   const badge = document.getElementById('profileBadge');
   if(!badge || !currentUser) return;
@@ -42,7 +59,7 @@ function buildHeader(activeTab, config){
   const firstName = currentUser ? currentUser.name.trim().split(/\s+/)[0] : '';
   const dateStr = new Date().toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric', year:'numeric' });
   const dateSub = document.getElementById('dateSub');
-  if(dateSub) dateSub.textContent = firstName ? `${greeting}, ${firstName} · ${dateStr}` : dateStr;
+  if(dateSub) dateSub.textContent = (firstName ? `${greeting}, ${firstName} · ` : '') + `${BOOK_LABELS[currentBook]} · ${dateStr}`;
 
   const actionBtn = document.getElementById('headerActionBtn');
   if(actionBtn){
@@ -88,6 +105,7 @@ async function initPage(config){
     await loadProfileData();
 
     buildNav(config.tab);
+    buildBookSwitcher();
     buildProfileBadge();
     buildHeader(config.tab, config);
     buildFooterActions();
