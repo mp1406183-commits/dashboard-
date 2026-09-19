@@ -44,6 +44,19 @@ let filters = { search: '', type: 'all', category: 'all', account: 'all', direct
 // is confirmed: { id, email, name }
 let currentUser = null;
 
+// Which ledger is active right now: 'personal' or 'business'. Personal and
+// Business are fully separate — separate accounts (each gets its own Cash/
+// Bank/UPI), separate transactions, budgets, goals, debts, SIPs, and
+// separate Excel export/import. Kept in localStorage since it's just a UI
+// preference (which ledger you're looking at), not sensitive data — it
+// needs to survive full page navigation since this is a multi-page site.
+const BOOK_LABELS = { personal: 'Personal', business: 'Business' };
+let currentBook = localStorage.getItem('finance-current-book') || 'personal';
+function setCurrentBook(book){
+  currentBook = book;
+  localStorage.setItem('finance-current-book', book);
+}
+
 // Each page sets this to its own "re-render my content" function right after
 // it builds its DOM, so that CRUD calls below can refresh the view in place.
 let onStateChange = null;
@@ -163,7 +176,9 @@ async function signOut(){
 }
 
 // ----------------------------------------------------------------------
-// Data persistence (Supabase `finance_data` table — one JSON row per user)
+// Data persistence (Supabase `finance_data` table — one JSON row per
+// user PER BOOK: (user_id, book) is the primary key, so Personal and
+// Business are two totally independent rows).
 // ----------------------------------------------------------------------
 async function loadProfileData(){
   if(!currentUser){ state = emptyState(); return; }
@@ -172,6 +187,7 @@ async function loadProfileData(){
       .from('finance_data')
       .select('data')
       .eq('user_id', currentUser.id)
+      .eq('book', currentBook)
       .maybeSingle();
     if(error) throw error;
     if(data && data.data){
@@ -192,8 +208,8 @@ async function loadProfileData(){
     state = emptyState();
   }
 
-  // Seed sensible default accounts on first use, and backfill anything
-  // saved before a field existed so older data keeps working.
+  // Seed sensible default accounts on first use of THIS book, and backfill
+  // anything saved before a field existed so older data keeps working.
   let needsSave = false;
   if(state.accounts.length === 0){
     state.accounts.push({ id: uid(), name: 'Cash', type: 'Cash', startingBalance: 0 });
@@ -222,7 +238,7 @@ async function save(){
   try{
     const { error } = await sb
       .from('finance_data')
-      .upsert({ user_id: currentUser.id, data: state }, { onConflict: 'user_id' });
+      .upsert({ user_id: currentUser.id, book: currentBook, data: state }, { onConflict: 'user_id,book' });
     if(error) throw error;
   }catch(e){
     console.error('Failed to save finance data', e);
@@ -230,7 +246,7 @@ async function save(){
 }
 
 function clearAll(){
-  if(!confirm("Clear all of your transactions, budgets, goals, accounts, and SIPs? This cannot be undone.")) return;
+  if(!confirm(`Clear all of your ${BOOK_LABELS[currentBook]} transactions, budgets, goals, accounts, and SIPs? This cannot be undone.`)) return;
   state = emptyState();
   save();
   loadProfileData().then(notifyChange);
@@ -414,7 +430,7 @@ function buildWorkbook(){
 
 function exportToExcel(){
   const wb = buildWorkbook();
-  const filename = `fd-finance-dashboard-${new Date().toISOString().slice(0,10)}.xlsx`;
+  const filename = `fd-finance-dashboard-${currentBook}-${new Date().toISOString().slice(0,10)}.xlsx`;
   XLSX.writeFile(wb, filename);
 }
 
