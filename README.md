@@ -1,3 +1,4 @@
+[README.md](https://github.com/user-attachments/files/32700234/README.md)
 # Money Manager — multi-page version (Supabase auth)
 
 Each panel is its own linked page, organized into folders, with real
